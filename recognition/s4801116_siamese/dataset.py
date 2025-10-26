@@ -16,15 +16,16 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from sklearn.model_selection import train_test_split
+
 
 from tqdm import tqdm
 
 # Hyperparameters
 BATCH_SIZE = 32
 WORKERS = 4
-TRAIN_SPLIT = 0.7
-TEST_SPLIT = 0.2
-VAL_SPLIT = 0.1
+TRAIN_SPLIT = 0.8
+VAL_SPLIT = 0.2
 
 def preprocess_data():
     pass
@@ -40,39 +41,131 @@ class ISIC2020Dataset(Dataset):
 
     Returns (anchor, positive, negative) triplet samples
     """
-    def __init__(self, data_path, mode, transform):
+    BENIGN_LABEL = 0
+    MALIGNANT_LABEL = 1
+
+    def __init__(self, data_dir, mode, transform=None):
         """
         Initialise dataset by supplying path for
         dataset images
 
         Args:
-            - data_path (str): Directory pointing to relevant images
+            - data_dir (str): Directory pointing to relevant images
             - mode (str): 'train' for training set, 'test' for testing set
             - transform (callable, optional): Image transforms to be 
             - applied on specified data 
         """
 
-        pass
+        self.data_dir = data_dir
+        self.transform = transform
+
+        self.benign_dir = os.path.join(data_dir, 'benign')
+        self.malignant_dir = os.path.join(data_dir, 'malignant')
+
+        # Define benign and malignant images
+        self.benign_paths = self.get_img_paths(self.BENIGN_LABEL)
+        self.malignant_paths = self.get_img_paths(self.MALIGNANT_LABEL)
+
+        all_imgs_labels = self.benign_paths + self.malignant_paths
+        all_imgs = [img for img, _ in all_imgs_labels]
+        all_labels = [label for _, label in all_imgs_labels]
+
+        # 2. Perform stratified split (using 80/20 split as default)
+        train_paths, val_paths, train_labels, val_labels = train_test_split(
+            all_imgs, 
+            all_labels, 
+            test_size=0.2, 
+            random_state=42, 
+            stratify=all_labels # CRUCIAL: Ensures class ratio is preserved
+        )
+
+        if self.mode == 'train':
+            self.images = list(zip(train_paths, train_labels))
+        elif self.mode == 'val':
+            self.images = list(zip(val_paths, val_labels))
+        else:
+            raise ValueError("Mode must be 'train' or 'val'")
+
+        # 4. Create indices dictionary for fast triplet sampling
+        self.indices_by_target = {
+            self.BENIGN_LABEL: [],
+            self.MALIGNANT_LABEL: [],
+        }
+
+        for idx, (_, target) in enumerate(self.images):
+            self.indices_by_target[target].append(idx)
 
     def __len__(self):
         """
         Returns the total number of samples in the dataset
         """
-
+        return len(self.images)
 
     def __getitem__(self, idx):
         """
-        Fetch a triplet sample (anchor, positive, negative)
+        Returns a triplet of samples 
+        (anchor, positive, negative)
+
         """
-        pass
+        # --- 1. Get Anchor (A) ---
+        anchor_path, anchor_target = self.images[idx]
+        
+        # --- 2. Get Positive (P) ---
+        # Find all indices of the same target class (excluding the anchor's own index)
+        possible_pos_indices = self.indices_by_target[anchor_target]
+        
+        # Ensure we don't pick the anchor itself as the positive
+        pos_idx = idx
+        while pos_idx == idx:
+            pos_idx = random.choice(possible_pos_indices)
+            
+        positive_path, _ = self.images[pos_idx]
+
+        # --- 3. Get Negative (N) ---
+        # The negative target is the opposite class
+        negative_target = self.MALIGNANT_LABEL if anchor_target == self.BENIGN_LABEL else self.BENIGN_LABEL
+        possible_neg_indices = self.indices_by_target[negative_target]
+        
+        # Randomly choose one index from the opposite class
+        neg_idx = random.choice(possible_neg_indices)
+        negative_path, _ = self.images[neg_idx]
+
+        # --- 4. Load and Transform Images ---
+        anchor_img = self.load_image(anchor_path)
+        positive_img = self.load_image(positive_path)
+        negative_img = self.load_image(negative_path)
+
+        if self.transform:
+            anchor_img = self.transform(anchor_img)
+            positive_img = self.transform(positive_img)
+            negative_img = self.transform(negative_img)
+        
+        # Return the triplet (A, P, N) and the original anchor label (for sanity check/debugging)
+        return anchor_img, positive_img, negative_img, anchor_target
 
     def load_image(self, path):
         """
         Load an image found in the given 
         file path
         """
-        pass
+        return Image.open(path).convert('RGB')
 
+    def get_img_paths(self, target_label):
+        """
+        Get paths of all images in the respective
+        class (Benign or malignant)
+
+        Args:
+            - target_label (int): 1 or 0 to indicate malignant or benign lesions
+
+        Returns:
+            - pass
+        """
+
+        img_dir = self.malignant_dir if target_label else self.benign_dir
+        img_paths = os.listdir(img_dir)
+        return list(map(lambda x: (x, target_label), img_paths))
+    
 
 
 
@@ -150,4 +243,6 @@ if __name__ == "__main__":
     metadata_csv_path = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-metadata.csv"
     raw_img_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-image"
     partitioned_imgs_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\processed"
-    partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir)
+    # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir)
+    train_set = ISIC2020Dataset(partitioned_imgs_dir, 'train')
+    test_set = ISIC2020Dataset(partitioned_imgs_dir, 'val')
