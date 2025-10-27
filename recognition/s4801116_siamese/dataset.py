@@ -16,8 +16,11 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from torch.utils.data.sampler import WeightedRandomSampler # To generate Balanced batches
 from sklearn.model_selection import train_test_split
-
+import matplotlib.pyplot as plt
+from imblearn.over_sampling import RandomOverSampler
+from collections import Counter
 
 from tqdm import tqdm
 
@@ -57,6 +60,7 @@ class ISIC2020Dataset(Dataset):
         """
 
         self.data_dir = data_dir
+        self.mode = mode
         self.transform = transform
 
         self.benign_dir = os.path.join(data_dir, 'benign')
@@ -67,16 +71,16 @@ class ISIC2020Dataset(Dataset):
         self.malignant_paths = self.get_img_paths(self.MALIGNANT_LABEL)
 
         all_imgs_labels = self.benign_paths + self.malignant_paths
-        all_imgs = [img for img, _ in all_imgs_labels]
-        all_labels = [label for _, label in all_imgs_labels]
+        self.all_imgs = [img for img, _ in all_imgs_labels]
+        self.all_labels = [label for _, label in all_imgs_labels]
 
         # 2. Perform stratified split (using 80/20 split as default)
         train_paths, val_paths, train_labels, val_labels = train_test_split(
-            all_imgs, 
-            all_labels, 
+            self.all_imgs, 
+            self.all_labels, 
             test_size=0.2, 
             random_state=42, 
-            stratify=all_labels # CRUCIAL: Ensures class ratio is preserved
+            stratify=self.all_labels
         )
 
         if self.mode == 'train':
@@ -164,8 +168,34 @@ class ISIC2020Dataset(Dataset):
 
         img_dir = self.malignant_dir if target_label else self.benign_dir
         img_paths = os.listdir(img_dir)
-        return list(map(lambda x: (x, target_label), img_paths))
+        return list(map(lambda x: (os.path.join(img_dir, x), target_label), img_paths))
     
+    def oversample_minority(self):
+        """
+        Performs oversampling of 
+        the minority class 'malignant'
+        by randomly duplicating entries
+        using RandomOverSampler
+        from imblearn library
+
+        Args:
+            - oversample_ratio (float): Ratio to oversample 
+            
+        """
+
+        # Reshape paths array to allow the arrays
+        # to work with RandomOverSampler
+        X = np.array(self.all_imgs).reshape(-1, 1) 
+        y = np.array(self.all_labels)
+
+        oversampler = RandomOverSampler(random_state=42)
+        X_over, y_over = oversampler.fit_resample(X, y)
+
+        oversampled_paths = X_over.ravel().tolist()
+        oversampled_labels = y_over.tolist()
+        
+        return oversampled_paths, oversampled_labels
+        
 
 
 
@@ -228,7 +258,6 @@ def partition_data(metadata_csv, raw_img_dir, output_dir):
     print("\n---------------------------------------------------------")
 
 
-
 def get_data_loaders():
     pass
 
@@ -246,3 +275,12 @@ if __name__ == "__main__":
     # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir)
     train_set = ISIC2020Dataset(partitioned_imgs_dir, 'train')
     test_set = ISIC2020Dataset(partitioned_imgs_dir, 'val')
+
+    train_set.oversample_minority()
+
+    # anchor, positive, negative, target = train_set[100] 
+    # anchor_label = "Malignant" if target == ISIC2020Dataset.MALIGNANT_LABEL else "Benign"
+
+    # # Use PIL's built-in show() method to display the image object
+    # print(f"Displaying raw PIL Image object (Target: {anchor_label}).")
+    # anchor.show()
