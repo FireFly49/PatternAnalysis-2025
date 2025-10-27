@@ -14,9 +14,13 @@ import shutil
 import pandas as pd
 import numpy as np
 from PIL import Image
+
+import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torch.utils.data.sampler import WeightedRandomSampler # To generate Balanced batches
+from torchvision import transforms
+
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from imblearn.over_sampling import RandomOverSampler
@@ -29,6 +33,9 @@ BATCH_SIZE = 32
 WORKERS = 4
 TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.2
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
+
 
 def preprocess_data():
     pass
@@ -36,12 +43,6 @@ def preprocess_data():
 class ISIC2020Dataset(Dataset):
     """
     Custom PyTorch Dataset for ISIC 2020 Kaggle challenge
-
-    Terminology:
-        - anchor: image with a given class
-        - positive: image with same class as anchor
-        - negative: image with opposite class to anchor
-
     Returns (anchor, positive, negative) triplet samples
     """
     BENIGN_LABEL = 0
@@ -51,12 +52,6 @@ class ISIC2020Dataset(Dataset):
         """
         Initialise dataset by supplying path for
         dataset images
-
-        Args:
-            - data_dir (str): Directory pointing to relevant images
-            - mode (str): 'train' for training set, 'test' for testing set
-            - transform (callable, optional): Image transforms to be 
-            - applied on specified data 
         """
 
         self.data_dir = data_dir
@@ -66,31 +61,32 @@ class ISIC2020Dataset(Dataset):
         self.benign_dir = os.path.join(data_dir, 'benign')
         self.malignant_dir = os.path.join(data_dir, 'malignant')
 
-        # Define benign and malignant images
-        self.benign_paths = self.get_img_paths(self.BENIGN_LABEL)
-        self.malignant_paths = self.get_img_paths(self.MALIGNANT_LABEL)
+        # 1. Define and combine ALL benign and malignant images
+        benign_paths_labels = self.get_img_paths(self.BENIGN_LABEL)
+        malignant_paths_labels = self.get_img_paths(self.MALIGNANT_LABEL)
+        
+        all_imgs_labels = benign_paths_labels + malignant_paths_labels
+        
+        all_paths = [img for img, _ in all_imgs_labels]
+        all_labels = [label for _, label in all_imgs_labels]
 
-        all_imgs_labels = self.benign_paths + self.malignant_paths
-        self.all_imgs = [img for img, _ in all_imgs_labels]
-        self.all_labels = [label for _, label in all_imgs_labels]
-
-        # 2. Perform stratified split (using 80/20 split as default)
         train_paths, val_paths, train_labels, val_labels = train_test_split(
-            self.all_imgs, 
-            self.all_labels, 
+            all_paths, 
+            all_labels, 
             test_size=0.2, 
             random_state=42, 
-            stratify=self.all_labels
+            stratify=all_labels
         )
 
         if self.mode == 'train':
-            self.images = list(zip(train_paths, train_labels))
+            oversampled_paths, oversampled_labels = self.oversample_minority(train_paths, train_labels)            
+            self.images = list(zip(oversampled_paths, oversampled_labels))
         elif self.mode == 'val':
+            print(f"--- Validation Set (Mode: {self.mode}) ---")
             self.images = list(zip(val_paths, val_labels))
         else:
             raise ValueError("Mode must be 'train' or 'val'")
 
-        # 4. Create indices dictionary for fast triplet sampling
         self.indices_by_target = {
             self.BENIGN_LABEL: [],
             self.MALIGNANT_LABEL: [],
@@ -106,31 +102,19 @@ class ISIC2020Dataset(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
-        """
-        Returns a triplet of samples 
-        (anchor, positive, negative)
-
-        """
         # --- 1. Get Anchor (A) ---
         anchor_path, anchor_target = self.images[idx]
         
         # --- 2. Get Positive (P) ---
-        # Find all indices of the same target class (excluding the anchor's own index)
         possible_pos_indices = self.indices_by_target[anchor_target]
-        
-        # Ensure we don't pick the anchor itself as the positive
         pos_idx = idx
         while pos_idx == idx:
             pos_idx = random.choice(possible_pos_indices)
-            
         positive_path, _ = self.images[pos_idx]
 
         # --- 3. Get Negative (N) ---
-        # The negative target is the opposite class
         negative_target = self.MALIGNANT_LABEL if anchor_target == self.BENIGN_LABEL else self.BENIGN_LABEL
         possible_neg_indices = self.indices_by_target[negative_target]
-        
-        # Randomly choose one index from the opposite class
         neg_idx = random.choice(possible_neg_indices)
         negative_path, _ = self.images[neg_idx]
 
@@ -144,58 +128,81 @@ class ISIC2020Dataset(Dataset):
             positive_img = self.transform(positive_img)
             negative_img = self.transform(negative_img)
         
-        # Return the triplet (A, P, N) and the original anchor label (for sanity check/debugging)
         return anchor_img, positive_img, negative_img, anchor_target
+    
+    def calculate_sampler_weights(self):
+        """
+        Calculates the inverse-frequency weights for each sample 
+        in the current dataset (self.images).
+        
+        This should be called on the train_dataset instance after 
+        imblearn has run, or on the val_dataset instance.
+        """
+        labels = self.all_labels
+        
+        # 1. Get counts from the FINAL processed list (self.images)
+        counts = Counter(labels)
+        
+        # 2. Calculate the total number of samples and the class weights
+        total_samples = len(labels)
+        
+        # Frequency = Class Count / Total Samples
+        # Weight = 1 / Frequency
+        class_weights = {
+            cls: total_samples / count
+            for cls, count in counts.items()
+        }
+        
+        # 3. Assign the calculated weight to every single sample
+        sample_weights = [
+            class_weights[label]
+            for label in labels
+        ]
+        
+        # Since this method is designed to be used with the DataLoader setup function,
+        # it returns the list of weights required by WeightedRandomSampler.
+        return sample_weights
+    
+    @property
+    def all_labels(self):
+        """
+        Returns the list of labels in the current dataset split (train or val).
+        This list reflects the oversampling applied during initialization for 'train' mode,
+        allowing external validation of class counts.
+        """
+        return [label for _, label in self.images]
 
     def load_image(self, path):
         """
-        Load an image found in the given 
-        file path
+        Load an image found in the given file path
         """
         return Image.open(path).convert('RGB')
 
     def get_img_paths(self, target_label):
         """
-        Get paths of all images in the respective
-        class (Benign or malignant)
-
-        Args:
-            - target_label (int): 1 or 0 to indicate malignant or benign lesions
-
-        Returns:
-            - pass
+        Get paths of all images in the respective class (Benign or malignant)
         """
-
         img_dir = self.malignant_dir if target_label else self.benign_dir
         img_paths = os.listdir(img_dir)
         return list(map(lambda x: (os.path.join(img_dir, x), target_label), img_paths))
     
-    def oversample_minority(self):
+    def oversample_minority(self, imgs, labels):
         """
-        Performs oversampling of 
-        the minority class 'malignant'
-        by randomly duplicating entries
-        using RandomOverSampler
-        from imblearn library
-
-        Args:
-            - oversample_ratio (float): Ratio to oversample 
-            
+        Performs oversampling of the minority class 'malignant'
+        by randomly duplicating entries using RandomOverSampler from imblearn.
         """
-
-        # Reshape paths array to allow the arrays
-        # to work with RandomOverSampler
-        X = np.array(self.all_imgs).reshape(-1, 1) 
-        y = np.array(self.all_labels)
-
+        
+        X = np.array(imgs).reshape(-1, 1) 
+        y = np.array(labels)
+        
         oversampler = RandomOverSampler(random_state=42)
         X_over, y_over = oversampler.fit_resample(X, y)
-
+        
         oversampled_paths = X_over.ravel().tolist()
         oversampled_labels = y_over.tolist()
         
         return oversampled_paths, oversampled_labels
-        
+
 
 
 
@@ -258,8 +265,56 @@ def partition_data(metadata_csv, raw_img_dir, output_dir):
     print("\n---------------------------------------------------------")
 
 
-def get_data_loaders():
-    pass
+def get_data_loaders(partitioned_imgs_dir):
+    """
+    Generate PyTorch custom 
+    dataloaders for the ISIC dataset
+    for validation and training sets
+    
+    """
+
+    # Transforms were borrowed from the following
+    # site https://pmc.ncbi.nlm.nih.gov/articles/PMC11766406/
+
+    train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.RandomRotation(degrees=20),
+        
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        
+        transforms.ToTensor(),
+        transforms.Normalize(mean=MEAN, std=STD)
+    ])
+
+    val_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=MEAN, std=STD)
+    ])
+
+    train_set = ISIC2020Dataset(partitioned_imgs_dir, 'train', transform=train_transform)
+    val_set = ISIC2020Dataset(partitioned_imgs_dir, 'val', transform=val_transform)
+
+    sample_weights = train_set.calculate_sampler_weights()
+    train_sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(train_set), replacement=True)
+
+    train_loader = DataLoader(
+        train_set,
+        batch_size=BATCH_SIZE,
+        sampler=train_sampler,
+        num_workers=WORKERS,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_set,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=WORKERS,
+        pin_memory=True
+    )
+
+    return train_loader, val_loader
 
 def main():
     pass
@@ -272,15 +327,20 @@ if __name__ == "__main__":
     metadata_csv_path = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-metadata.csv"
     raw_img_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-image"
     partitioned_imgs_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\processed"
-    # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir)
-    train_set = ISIC2020Dataset(partitioned_imgs_dir, 'train')
-    test_set = ISIC2020Dataset(partitioned_imgs_dir, 'val')
+    # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir) UNCOMMENT AT THE END
 
-    train_set.oversample_minority()
+    train_loader, val_loader = get_data_loaders(partitioned_imgs_dir)
 
-    # anchor, positive, negative, target = train_set[100] 
-    # anchor_label = "Malignant" if target == ISIC2020Dataset.MALIGNANT_LABEL else "Benign"
+    # Print overall dataset statistics
+    train_dataset = train_loader.dataset
+    val_dataset = val_loader.dataset
+    
+    #Checking if we balanced the dataset for real
+    train_benign_count = sum(1 for label in train_dataset.all_labels if label == 0)
+    train_malignant_count = sum(1 for label in train_dataset.all_labels if label == 1)
+    val_benign_count = sum(1 for label in val_dataset.all_labels if label == 0)
+    val_malignant_count = sum(1 for label in val_dataset.all_labels if label == 1)
 
-    # # Use PIL's built-in show() method to display the image object
-    # print(f"Displaying raw PIL Image object (Target: {anchor_label}).")
-    # anchor.show()
+    print("\nOverall Dataset Statistics:")
+    print(f"Training set - Total: {len(train_dataset)}, Benign: {train_benign_count}, Malignant: {train_malignant_count}")
+    print(f"Validation set - Total: {len(val_dataset)}, Benign: {val_benign_count}, Malignant: {val_malignant_count}")
