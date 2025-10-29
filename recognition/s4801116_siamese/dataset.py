@@ -38,6 +38,13 @@ MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 
 
+DATA_ROOT = "data"
+PROCESSED_IMGS_FOLDER = "processed"
+RAW_IMGS_FOLDER = "raw"
+TRAIN_IMGS_FOLDER = "train-image"
+
+PARTIONED_IMGS_DIR = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
+
 def preprocess_data():
     pass
 
@@ -267,7 +274,7 @@ def partition_data(metadata_csv, raw_img_dir, output_dir):
     print("\n---------------------------------------------------------")
 
 
-def get_data_loaders(partitioned_imgs_dir):
+def get_data_loaders(partitioned_imgs_dir=PARTIONED_IMGS_DIR):
     """
     Generate PyTorch custom 
     dataloaders for the ISIC dataset
@@ -325,17 +332,11 @@ def main():
 
 if __name__ == "__main__":
     
-    DATA_ROOT = "data"
-    PROCESSED_IMGS_FOLDER = "processed"
-    RAW_IMGS_FOLDER = "raw"
-    TRAIN_IMGS_FOLDER = "train-image"
-
     metadata_csv_path = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, "train-metadata.csv")
     raw_img_dir = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, TRAIN_IMGS_FOLDER)
-    partitioned_imgs_dir = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
     # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir) UNCOMMENT AT THE END
 
-    train_loader, val_loader = get_data_loaders(partitioned_imgs_dir)
+    train_loader, val_loader = get_data_loaders()
 
     # Print overall dataset statistics
     train_dataset = train_loader.dataset
