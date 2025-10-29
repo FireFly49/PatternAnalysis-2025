@@ -27,6 +27,7 @@ from imblearn.over_sampling import RandomOverSampler
 from collections import Counter
 
 from tqdm import tqdm
+import glob
 
 # Hyperparameters
 BATCH_SIZE = 32
@@ -53,7 +54,6 @@ class ISIC2020Dataset(Dataset):
         Initialise dataset by supplying path for
         dataset images
         """
-
         self.data_dir = data_dir
         self.mode = mode
         self.transform = transform
@@ -61,7 +61,6 @@ class ISIC2020Dataset(Dataset):
         self.benign_dir = os.path.join(data_dir, 'benign')
         self.malignant_dir = os.path.join(data_dir, 'malignant')
 
-        # 1. Define and combine ALL benign and malignant images
         benign_paths_labels = self.get_img_paths(self.BENIGN_LABEL)
         malignant_paths_labels = self.get_img_paths(self.MALIGNANT_LABEL)
         
@@ -82,7 +81,6 @@ class ISIC2020Dataset(Dataset):
             oversampled_paths, oversampled_labels = self.oversample_minority(train_paths, train_labels)            
             self.images = list(zip(oversampled_paths, oversampled_labels))
         elif self.mode == 'val':
-            print(f"--- Validation Set (Mode: {self.mode}) ---")
             self.images = list(zip(val_paths, val_labels))
         else:
             raise ValueError("Mode must be 'train' or 'val'")
@@ -183,8 +181,12 @@ class ISIC2020Dataset(Dataset):
         Get paths of all images in the respective class (Benign or malignant)
         """
         img_dir = self.malignant_dir if target_label else self.benign_dir
-        img_paths = os.listdir(img_dir)
-        return list(map(lambda x: (os.path.join(img_dir, x), target_label), img_paths))
+        img_paths = []
+        with os.scandir(img_dir) as files:
+            for file in files:
+                img_paths.append(file.path) if file.name.endswith('.jpg') else None
+
+        return [(path, target_label) for path in img_paths]
     
     def oversample_minority(self, imgs, labels):
         """
@@ -323,10 +325,14 @@ def main():
 
 if __name__ == "__main__":
     
-    # CHANGE ABSOLUTE PATH TO RELATIVE PATH LATER
-    metadata_csv_path = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-metadata.csv"
-    raw_img_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\raw\train-image"
-    partitioned_imgs_dir = r"C:\Users\lalit\Documents\Uni\yr_3\sem_2\comp_3710\PatternAnalysis-2025\recognition\s4801116_siamese\data\processed"
+    DATA_ROOT = "data"
+    PROCESSED_IMGS_FOLDER = "processed"
+    RAW_IMGS_FOLDER = "raw"
+    TRAIN_IMGS_FOLDER = "train-image"
+
+    metadata_csv_path = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, "train-metadata.csv")
+    raw_img_dir = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, TRAIN_IMGS_FOLDER)
+    partitioned_imgs_dir = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
     # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir) UNCOMMENT AT THE END
 
     train_loader, val_loader = get_data_loaders(partitioned_imgs_dir)
