@@ -53,7 +53,7 @@ def validate_epoch(model, loader, criterion, device):
 
 def main():
     # --- Configuration ---
-    num_epochs = 1
+    num_epochs = 30
     learning_rate = 1e-4
     triplet_margin = 0.5
     save_dir = "checkpoints"
