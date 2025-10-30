@@ -60,6 +60,11 @@ class ISIC2020Dataset(Dataset):
         """
         Initialise dataset by supplying path for
         dataset images
+
+        Args:
+            - data_dir (str): Path to the root directory containing 'benign' and 'malignant' folders
+            - mode (str): One of 'train' or 'val' to specify dataset split
+            - transform (torchvision.transforms): Transformations to apply to images
         """
         self.data_dir = data_dir
         self.mode = mode
@@ -103,10 +108,25 @@ class ISIC2020Dataset(Dataset):
     def __len__(self):
         """
         Returns the total number of samples in the dataset
+
+        Returns:
+            - length (int): Number of samples
         """
         return len(self.images)
 
     def __getitem__(self, idx):
+        """
+        Returns a triplet (anchor, positive, negative) for the given index
+
+        Args:
+            - idx (int): Index of the anchor image
+        
+        Returns:
+            - anchor_img (torch.Tensor): Anchor image tensor
+            - positive_img (torch.Tensor): Positive image tensor
+            - negative_img (torch.Tensor): Negative image tensor
+            - anchor_target (int): Target label of the anchor image
+        """
         # --- 1. Get Anchor (A) ---
         anchor_path, anchor_target = self.images[idx]
         
@@ -138,10 +158,12 @@ class ISIC2020Dataset(Dataset):
     def calculate_sampler_weights(self):
         """
         Calculates the inverse-frequency weights for each sample 
-        in the current dataset (self.images).
-        
-        This should be called on the train_dataset instance after 
-        imblearn has run, or on the val_dataset instance.
+        in the current dataset (self.images). This should be called
+        on the train_dataset instance after imblearn has run,
+        or on the val_dataset instance.
+
+        Returns:
+            - sample_weights (list): List of weights for each sample
         """
         labels = self.all_labels
         
@@ -180,12 +202,24 @@ class ISIC2020Dataset(Dataset):
     def load_image(self, path):
         """
         Load an image found in the given file path
+
+        Args:
+            - path (str): File path to the image
+
+        Returns:
+            - image (PIL.Image): Loaded image in RGB format
         """
         return Image.open(path).convert('RGB')
 
     def get_img_paths(self, target_label):
         """
         Get paths of all images in the respective class (Benign or malignant)
+
+        Args:
+            - target_label (int): 0 for benign, 1 for malignant
+
+        Returns:
+            - img_paths (list): List of tuples (image_path, target_label)
         """
         img_dir = self.malignant_dir if target_label else self.benign_dir
         img_paths = []
@@ -199,6 +233,14 @@ class ISIC2020Dataset(Dataset):
         """
         Performs oversampling of the minority class 'malignant'
         by randomly duplicating entries using RandomOverSampler from imblearn.
+
+        Args:
+            - imgs (list): List of image file paths
+            - labels (list): Corresponding list of labels (0 or 1)
+
+        Returns:
+            - oversampled_paths (list): List of image file paths after oversampling
+            - oversampled_labels (list): Corresponding list of labels after oversampling    
         """
         
         X = np.array(imgs).reshape(-1, 1) 
