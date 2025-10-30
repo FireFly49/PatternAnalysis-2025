@@ -14,81 +14,68 @@ import torch.nn.functional as F
 from torchvision import models
 
 class SiameseNetwork(nn.Module):
-    """
-    A Siamese Network architecture using a ResNet-34 backbone for 
-    deep metric learning with Triplet Loss. 
-    
-    The network generates a low-dimensional embedding (256D) for each input image.
-    """
-
     def __init__(self, embedding_dim=256):
-        """
-        Initializes the Siamese Network structure.
-
-        Args:
-            embedding_dim (int): The final dimension of the embedding vector.
-        """
         super(SiameseNetwork, self).__init__()
 
-        # --- 1. Backbone: Use pre-trained ResNet-34 ---
-        # Note: Set pretrained=True to use ImageNet weights
-        self.backbone = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
-        
-        # Get the size of the features before the final FC layer (512 for ResNet-34)
+        # Backbone
+        self.backbone = models.resnet34(weights='ResNet34_Weights.DEFAULT')
         num_ftrs = self.backbone.fc.in_features
-        
-        # --- 2. Feature Extractor Modification ---
-        # Remove the final classification layer
         self.backbone.fc = nn.Identity()
 
-        # --- 3. Embedding Head ---
-        # Add a custom head to project the features into the desired embedding space
+        # Improved embedding head
         self.embedding_head = nn.Sequential(
-            # Apply dropout for regularization
-            nn.Dropout(0.5), 
-            # Final linear layer to map 512 features to the embedding dimension (256)
-            nn.Linear(num_ftrs, embedding_dim),
-            # L2 Normalization ensures the embeddings live on a hypersphere,
-            # which is crucial for distance-based metric learning.
-            nn.BatchNorm1d(embedding_dim) 
+            nn.Linear(num_ftrs, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(512, embedding_dim),
+            nn.BatchNorm1d(embedding_dim)
         )
 
-    def forward_single(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Processes a single input image through the network to produce its embedding.
-
-        Args:
-            x (torch.Tensor): The input image (e.g., Anchor, Positive, or Negative).
-
-        Returns:
-            torch.Tensor: The normalized 256D embedding vector.
-        """
-        # Pass image through the modified ResNet backbone
+    def forward_single(self, x):
         features = self.backbone(x)
-        
-        # Pass features through the embedding head
         embedding = self.embedding_head(features)
-        
-        # L2 normalize the embedding (important for distance metrics)
-        embedding = nn.functional.normalize(embedding, p=2, dim=1)
-        
+        embedding = F.normalize(embedding, p=2, dim=1)
         return embedding
 
     def forward(self, anchor, positive, negative):
+        anchor_emb = self.forward_single(anchor)
+        pos_emb = self.forward_single(positive)
+        neg_emb = self.forward_single(negative)
+        return anchor_emb, pos_emb, neg_emb
+
+
+class LesionClassifier(nn.Module):
+    """
+    Simple binary classifier that takes a precomputed embedding
+    (e.g., from a pretrained Siamese network) and predicts 0/1.
+    """
+    def __init__(self, embedding_dim=256, hidden_dim=128):
         """
-        Processes a triplet (Anchor, Positive, Negative) simultaneously.
-        
+        Classifier that takes in an embedding and outputs binary 
+        class targets for lesion classification.
+
         Args:
-            anchor (torch.Tensor): The anchor batch.
-            positive (torch.Tensor): The positive batch.
-            negative (torch.Tensor): The negative batch.
+            - embedding_dim (int): Dimension of input embeddings
+            - hidden_dim (int): Dimension of hidden layer
+        """
+        super(LesionClassifier, self).__init__()
+        self.classifier = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, embedding):
+        """
+        Predicts binary class from input embedding.
+
+        Args:
+            - embedding (Tensor): Input embedding tensor of shape (B, embedding_dim)
 
         Returns:
-            tuple: (anchor_embedding, positive_embedding, negative_embedding)
+            - prediction (Tensor): Output predictions of shape (B, 1)
         """
-        # Process each item in the triplet
-        anchor_embed = self.forward_single(anchor)
-        positive_embed = self.forward_single(positive)
-        negative_embed = self.forward_single(negative)
-        
-        return anchor_embed, positive_embed, negative_embed
+        prediction = self.classifier(embedding)
+        return prediction
