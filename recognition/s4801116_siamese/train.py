@@ -169,7 +169,7 @@ def main():
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(metrics_dir, exist_ok=True)
     best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
-    epoch_metrics_export_file = os.path.join("graphs", "epoch_metrics.csv")
+    epoch_metrics_export_file = os.path.join(metrics_dir, "epoch_metrics.csv")
     print("✅ Created / Checked necessary directories")
 
     # === Data loaders ===
