@@ -64,7 +64,7 @@ class LesionClassifier(nn.Module):
             nn.Linear(embedding_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.4),
+            nn.Dropout(0.5),
             nn.Linear(hidden_dim, 2)
         )
 
