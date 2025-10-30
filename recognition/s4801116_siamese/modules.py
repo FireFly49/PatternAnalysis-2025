@@ -27,7 +27,7 @@ class SiameseNetwork(nn.Module):
             nn.Linear(num_ftrs, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
+            nn.Dropout(0.4),
             nn.Linear(512, embedding_dim),
             nn.BatchNorm1d(embedding_dim)
         )

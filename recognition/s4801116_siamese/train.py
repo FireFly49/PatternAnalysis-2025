@@ -22,7 +22,7 @@ from tqdm import tqdm
 from modules import SiameseNetwork, LesionClassifier
 from dataset import get_data_loaders
 
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix, balanced_accuracy_score
 
 from config import EMBEDDING_DIM, LEARNING_RATE, EPOCHS, BATCH_SIZE, PARTIONED_IMGS_DIR
 
@@ -80,12 +80,11 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
         running_triplet_loss += triplet_loss_val.item()
         running_class_loss += class_loss_val.item()
 
-
         # Calculate and display running accuracy
-        running_recall = recall_score(all_labels, all_preds, zero_division=0)
+        running_acc = balanced_accuracy_score(all_labels, all_preds)
         pbar_train.set_postfix({'Triplet Loss': running_triplet_loss / (batch_idx + 1),
                                  'Class Loss': running_class_loss / (batch_idx + 1),
-                                 'Recall': f'{running_recall:.4f}'})
+                                 'Acc': f'{running_acc:.4f}'})
         
     cm = confusion_matrix(all_labels, all_preds)
     print(f"\nConfusion Matrix Training set:\n{cm}")
@@ -94,10 +93,10 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
     avg_triplet_loss = running_triplet_loss / len(train_loader)
     avg_class_loss = running_class_loss / len(train_loader)
     # final_acc = accuracy_score(all_labels, all_preds)
-    final_recall = recall_score(all_labels, all_preds)
-    final_acc = (final_recall + (cm[0,0] / (cm[0,0] + cm[0,1]))) / 2
+    # final_recall = recall_score(all_labels, all_preds)
+    final_acc = balanced_accuracy_score(all_labels, all_preds)
 
-    return avg_triplet_loss, avg_class_loss, final_acc, final_recall
+    return avg_triplet_loss, avg_class_loss, final_acc
 
 
 
@@ -138,10 +137,10 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
             running_triplet_loss += triplet_loss_val.item()
             running_class_loss += class_loss_val.item()
 
-            running_recall = recall_score(all_labels, all_preds, zero_division=0)
+            running_acc = balanced_accuracy_score(all_labels, all_preds)
             pbar_val.set_postfix({'Triplet Loss': running_triplet_loss / (batch_idx + 1),
                                  'Class Loss': running_class_loss / (batch_idx + 1),
-                                 'Recall': f'{running_recall:.4f}'})
+                                 'Acc': f'{running_acc:.4f}'})
             
     cm = confusion_matrix(all_labels, all_preds)
     print(f"\nConfusion Matrix Validation set:\n{cm}")
@@ -151,10 +150,10 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
     avg_class_loss = running_class_loss / len(val_loader)
     # final_acc = accuracy_score(all_labels, all_preds)
 
-    final_recall = recall_score(all_labels, all_preds)
-    final_acc = (final_recall + (cm[0,0] / (cm[0,0] + cm[0,1]))) / 2
+    # final_recall = recall_score(all_labels, all_preds)
+    final_acc = balanced_accuracy_score(all_labels, all_preds)
 
-    return avg_triplet_loss, avg_class_loss, final_acc, final_recall
+    return avg_triplet_loss, avg_class_loss, final_acc
 
 
 def main():
@@ -205,10 +204,10 @@ def main():
     train_triplet_losses, val_triplet_losses = [], []
     train_class_losses, val_class_losses = [], []
     train_accs, val_accs = [], []
-    train_recalls, val_recalls = [], []   # <--- NEW
+    # train_recalls, val_recalls = [], []   
 
     # === Checkpoint tracking ===
-    best_val_recall = 0.0     # <--- Save best model by recall (or acc, your choice)
+    best_val_acc = 0.0     # <--- Save best model by recall (or acc, your choice)
     start_epoch = 0
 
     # === Resume checkpoint (optional) ===
@@ -220,8 +219,8 @@ def main():
         optimizer.load_state_dict(ckpt["optimizer_state"])
         scheduler.load_state_dict(ckpt["scheduler_state"])
         start_epoch = ckpt["epoch"]
-        best_val_recall = ckpt.get("best_val_recall", 0.0)
-        print(f"✅ Resumed from checkpoint at epoch {start_epoch} (best recall: {best_val_recall:.4f})")
+        best_val_acc = ckpt.get("best_val_acc", 0.0)
+        print(f"✅ Resumed from checkpoint at epoch {start_epoch} (best acc: {best_val_acc:.4f})")
 
     # === Training loop ===
     start = time.time()
@@ -244,12 +243,12 @@ def main():
                 print("Backbone unfrozen for fine-tuning")
 
         # --- Training ---
-        train_triplet_loss, train_class_loss, train_acc, train_recall = train_epoch(
+        train_triplet_loss, train_class_loss, train_acc = train_epoch(
             train_loader, device, model, classifier, optimizer, scaler, triplet_loss, classifier_loss
         )
 
         # --- Validation ---
-        val_triplet_loss, val_class_loss, val_acc, val_recall = validate_epoch(
+        val_triplet_loss, val_class_loss, val_acc = validate_epoch(
             val_loader, device, model, classifier, triplet_loss, classifier_loss
         )
 
@@ -260,20 +259,20 @@ def main():
         val_class_losses.append(val_class_loss)
         train_accs.append(train_acc)
         val_accs.append(val_acc)
-        train_recalls.append(train_recall)
-        val_recalls.append(val_recall)
+        # train_recalls.append(train_recall)
+        # val_recalls.append(val_recall)
 
         print(
             f"Train Triplet Loss: {train_triplet_loss:.4f}, "
             f"Train Class Loss: {train_class_loss:.4f}, "
-            f"Train Acc: {train_acc:.4f}, Train Recall: {train_recall:.4f}\n"
+            f"Train Acc: {train_acc:.4f}, "
             f"Val Triplet Loss: {val_triplet_loss:.4f}, "
             f"Val Class Loss: {val_class_loss:.4f}, "
-            f"Val Acc: {val_acc:.4f}, Val Recall: {val_recall:.4f}"
+            f"Val Acc: {val_acc:.4f}, "
         )
 
         # --- Scheduler step (based on recall) ---
-        scheduler.step(val_recall)
+        scheduler.step(val_acc)
 
         # --- Checkpointing ---
         checkpoint = {
@@ -282,17 +281,17 @@ def main():
             "classifier_state": classifier.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "scheduler_state": scheduler.state_dict(),
-            "best_val_recall": best_val_recall,
+            "best_val_acc": best_val_acc,
         }
 
         # Always save "last"
         torch.save(checkpoint, os.path.join(checkpoint_dir, "last_checkpoint.pth"))
 
         # Save "best" checkpoint if recall improves
-        if val_recall > best_val_recall:
-            best_val_recall = val_recall
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             torch.save(checkpoint, best_model_path)
-            print(f"🏆 New best model saved at epoch {epoch+1} (val recall: {best_val_recall:.4f})")
+            print(f"🏆 New best model saved at epoch {epoch+1} (val acc: {best_val_acc:.4f})")
 
         # Optional: periodic checkpoint
         if (epoch + 1) % 5 == 0:
@@ -307,14 +306,14 @@ def main():
         'val_class_loss': val_class_losses,
         'train_acc': train_accs,
         'val_acc': val_accs,
-        'train_recall': train_recalls,
-        'val_recall': val_recalls
+        # 'train_recall': train_recalls,
+        # 'val_recall': val_recalls
     })
     df.to_csv(epoch_metrics_export_file, index=False)
 
     end = time.time()
     print(f"Training completed in {(end - start)/60:.2f} minutes.")
-    print(f"✅ Best validation recall: {best_val_recall:.4f}")
+    print(f"✅ Best validation acc: {best_val_acc:.4f}")
 
 
 if __name__ == "__main__":
