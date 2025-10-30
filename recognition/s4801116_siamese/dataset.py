@@ -1,7 +1,7 @@
 """
 dataset.py
 
-(ADD DESCRIPTION)
+(ADD DESCRIPTION
 
 Author: Lalit Suresh
 Date: 25th October 2025
@@ -27,15 +27,10 @@ from imblearn.over_sampling import RandomOverSampler
 from collections import Counter
 
 from tqdm import tqdm
-import glob
+from config import BATCH_SIZE, WORKERS, MEAN, STD, PARTIONED_IMGS_DIR, METADATA_CSV_PATH, RAW_IMG_DIR
 
 # Hyperparameters
-BATCH_SIZE = 32
-WORKERS = 4
-TRAIN_SPLIT = 0.8
-VAL_SPLIT = 0.2
-MEAN = [0.485, 0.456, 0.406]
-STD = [0.229, 0.224, 0.225]
+
 
 
 DATA_ROOT = "data"
@@ -45,8 +40,8 @@ TRAIN_IMGS_FOLDER = "train-image"
 
 PARTIONED_IMGS_DIR = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
 
-def preprocess_data():
-    pass
+# Credit to https://github.com/TheNoZER0/PatternAnalysis-2024/tree/topic-recognition/recognition/Siamese-48008361
+# for base structure of dataset file
 
 class ISIC2020Dataset(Dataset):
     """
@@ -321,7 +316,12 @@ def get_data_loaders(partitioned_imgs_dir=PARTIONED_IMGS_DIR):
     Generate PyTorch custom 
     dataloaders for the ISIC dataset
     for validation and training sets
-    
+
+    Args:
+        - partitioned_imgs_dir (str): Path to partitioned images directory
+
+    Returns:
+        - train_loader (DataLoader): DataLoader for training set
     """
 
     # Transforms were borrowed from the following
@@ -368,14 +368,8 @@ def get_data_loaders(partitioned_imgs_dir=PARTIONED_IMGS_DIR):
     return train_loader, val_loader
 
 def main():
-    pass
+        
 
-
-
-if __name__ == "__main__":
-    
-    metadata_csv_path = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, "train-metadata.csv")
-    raw_img_dir = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, TRAIN_IMGS_FOLDER)
     # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir) UNCOMMENT AT THE END
 
     train_loader, val_loader = get_data_loaders()
@@ -393,3 +387,8 @@ if __name__ == "__main__":
     print("\nOverall Dataset Statistics:")
     print(f"Training set - Total: {len(train_dataset)}, Benign: {train_benign_count}, Malignant: {train_malignant_count}")
     print(f"Validation set - Total: {len(val_dataset)}, Benign: {val_benign_count}, Malignant: {val_malignant_count}")
+
+
+
+if __name__ == "__main__":
+    main()
