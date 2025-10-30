@@ -149,7 +149,7 @@ def main():
     # === Hyperparameters and Paths ===
     checkpoint_dir = "checkpoints"
     os.makedirs(checkpoint_dir, exist_ok=True)
-    best_model_path = os.path.join(checkpoint_dir, "best_model.pth")
+    best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
 
     # === Data loaders ===
     train_loader, val_loader = get_data_loaders()
@@ -180,7 +180,7 @@ def main():
     start_epoch = 0
 
     # === (Optional) Resume from checkpoint ===
-    resume_path = os.path.join(checkpoint_dir, "last_checkpoint.pth")
+    resume_path = os.path.join(checkpoint_dir, "last_checkpoint.pt")
     if os.path.exists(resume_path):
         ckpt = torch.load(resume_path, map_location=device)
         model.load_state_dict(ckpt["model_state"])
