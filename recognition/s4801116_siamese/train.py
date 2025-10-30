@@ -21,7 +21,7 @@ from tqdm import tqdm
 from modules import SiameseNetwork, LesionClassifier
 from dataset import get_data_loaders
 
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 
 from config import EMBEDDING_DIM, LEARNING_RATE, EPOCHS, BATCH_SIZE, PARTIONED_IMGS_DIR
 
@@ -78,9 +78,13 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
         all_labels.extend(labels.cpu().numpy())
 
         running_triplet_loss += triplet_loss_val.item()
-        running_class_loss += triplet_loss_val.item()
+        running_class_loss += class_loss_val.item()
 
-                # Calculate and display running accuracy
+        cm = confusion_matrix(all_labels, all_preds)
+
+        print(f"\nConfusion Matrix Training set:\n{cm}")
+
+        # Calculate and display running accuracy
         running_acc = accuracy_score(all_labels, all_preds)
         pbar_train.set_postfix({'Triplet Loss': running_triplet_loss / (batch_idx + 1),
                                  'Class Loss': running_class_loss / (batch_idx + 1),
@@ -129,7 +133,11 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
             all_labels.extend(labels.cpu().numpy())
 
             running_triplet_loss += triplet_loss_val.item()
-            running_class_loss += triplet_loss_val.item()
+            running_class_loss += class_loss_val.item()
+
+            cm = confusion_matrix(all_labels, all_preds)
+
+            print(f"\nConfusion Matrix Validation set:\n{cm}")
 
             running_acc = accuracy_score(all_labels, all_preds)
             pbar_val.set_postfix({'Triplet Loss': running_triplet_loss / (batch_idx + 1),
