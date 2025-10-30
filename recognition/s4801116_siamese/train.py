@@ -27,6 +27,10 @@ from config import EMBEDDING_DIM, LEARNING_RATE, EPOCHS, BATCH_SIZE, PARTIONED_I
 
 import time
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
 
 def train_epoch(train_loader, device, model, classifier, optimizer, scaler, triplet_loss, class_loss):
     """
@@ -146,14 +150,18 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # === Hyperparameters and Paths ===
+    # === Paths ===
     checkpoint_dir = "checkpoints"
+    metrics_dir = "metrics"
     os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(metrics_dir, exist_ok=True)
     best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
+    epoch_metrics_export_file = os.path.join("graphs", "epoch_metrics.csv")
+    print("✅ Created / Checked necessary directories")
 
     # === Data loaders ===
     train_loader, val_loader = get_data_loaders()
-    print("Loaded data :)")
+    print("✅ Data loaders ready")
 
     # === Models, Losses, Optimizer, Scheduler ===
     model = SiameseNetwork(embedding_dim=EMBEDDING_DIM).to(device)
@@ -249,6 +257,18 @@ def main():
         # Optional: periodic full checkpoint (e.g., every 5 epochs)
         if (epoch + 1) % 5 == 0:
             torch.save(checkpoint, os.path.join(checkpoint_dir, f"epoch_{epoch+1}.pth"))
+
+    df = pd.DataFrame({
+        'epoch': range(len(EPOCHS)),
+        'train_triplet_loss': train_triplet_losses,
+        'val_triplet_loss': val_triplet_losses,
+        'train_class_loss': train_class_losses,
+        'val_class_loss': val_class_losses,
+        'train_acc': train_accs,
+        'val_acc': val_accs
+    })
+
+    df.to_csv(epoch_metrics_export_file, index=False)
 
     end = time.time()
     print(f"Training completed in {(end - start)/60:.2f} minutes.")
