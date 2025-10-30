@@ -9,6 +9,7 @@ Date: 25th October 2025
 """
 
 import os
+from collections import Counter
 
 import torch
 import torch.nn as nn
@@ -173,6 +174,17 @@ def main():
     # === Models, Losses, Optimizer, Scheduler ===
     model = SiameseNetwork(embedding_dim=EMBEDDING_DIM).to(device)
     classifier = LesionClassifier(embedding_dim=EMBEDDING_DIM).to(device)
+
+        # You can access labels directly from the dataset object
+    train_labels = train_loader.dataset.all_labels
+    class_counts = Counter(train_labels)
+    benign_count = class_counts[0]
+    malignant_count = class_counts[1]
+
+    # Define class weights (you can adjust the ratio)
+    ratio = benign_count / malignant_count
+    class_weights = torch.tensor([1.0, min(ratio, 5.0)], device=device)
+    # class_weights = torch.tensor([1.0, benign_count / malignant_count], device=device)
 
     triplet_loss = nn.TripletMarginLoss(margin=1.0).to(device)
     classifier_loss = nn.CrossEntropyLoss(label_smoothing=0.1).to(device)

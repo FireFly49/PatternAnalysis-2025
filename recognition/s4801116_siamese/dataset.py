@@ -85,8 +85,7 @@ class ISIC2020Dataset(Dataset):
         )
 
         if self.mode == 'train':
-            oversampled_paths, oversampled_labels = self.oversample_minority(train_paths, train_labels)            
-            self.images = list(zip(oversampled_paths, oversampled_labels))
+            self.images = list(zip(train_paths, train_labels))
         elif self.mode == 'val':
             self.images = list(zip(val_paths, val_labels))
         else:
@@ -224,30 +223,30 @@ class ISIC2020Dataset(Dataset):
 
         return [(path, target_label) for path in img_paths]
     
-    def oversample_minority(self, imgs, labels):
-        """
-        Performs oversampling of the minority class 'malignant'
-        by randomly duplicating entries using RandomOverSampler from imblearn.
+    # def oversample_minority(self, imgs, labels):
+    #     """
+    #     Performs oversampling of the minority class 'malignant'
+    #     by randomly duplicating entries using RandomOverSampler from imblearn.
 
-        Args:
-            - imgs (list): List of image file paths
-            - labels (list): Corresponding list of labels (0 or 1)
+    #     Args:
+    #         - imgs (list): List of image file paths
+    #         - labels (list): Corresponding list of labels (0 or 1)
 
-        Returns:
-            - oversampled_paths (list): List of image file paths after oversampling
-            - oversampled_labels (list): Corresponding list of labels after oversampling    
-        """
+    #     Returns:
+    #         - oversampled_paths (list): List of image file paths after oversampling
+    #         - oversampled_labels (list): Corresponding list of labels after oversampling    
+    #     """
         
-        X = np.array(imgs).reshape(-1, 1) 
-        y = np.array(labels)
+    #     X = np.array(imgs).reshape(-1, 1) 
+    #     y = np.array(labels)
         
-        oversampler = RandomOverSampler(random_state=42)
-        X_over, y_over = oversampler.fit_resample(X, y)
+    #     oversampler = RandomOverSampler(random_state=42)
+    #     X_over, y_over = oversampler.fit_resample(X, y)
         
-        oversampled_paths = X_over.ravel().tolist()
-        oversampled_labels = y_over.tolist()
+    #     oversampled_paths = X_over.ravel().tolist()
+    #     oversampled_labels = y_over.tolist()
         
-        return oversampled_paths, oversampled_labels
+    #     return oversampled_paths, oversampled_labels
 
 
 
