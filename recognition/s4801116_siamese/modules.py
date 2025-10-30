@@ -62,8 +62,9 @@ class LesionClassifier(nn.Module):
         super(LesionClassifier, self).__init__()
         self.classifier = nn.Sequential(
             nn.Linear(embedding_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
+            nn.Dropout(0.4),
             nn.Linear(hidden_dim, 2)
         )
 

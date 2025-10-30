@@ -196,6 +196,7 @@ def main():
     optimizer = Adam(
         list(model.parameters()) + list(classifier.parameters()),
         lr=LEARNING_RATE,
+        weight_decay=1e-4
     )
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5)
     scaler = GradScaler()
@@ -227,6 +228,20 @@ def main():
 
     for epoch in range(start_epoch, EPOCHS):
         print(f"\nEpoch {epoch+1}/{EPOCHS}")
+
+        # --- Backbone freeze/unfreeze logic ---
+        if epoch < 3:
+            # Freeze the backbone for first 3 epochs
+            for param in model.backbone.parameters():
+                param.requires_grad = False
+            if epoch == 0:
+                print("Backbone frozen for initial warmup phase")
+        else:
+            # Unfreeze the backbone for fine-tuning
+            for param in model.backbone.parameters():
+                param.requires_grad = True
+            if epoch == 3:
+                print("Backbone unfrozen for fine-tuning")
 
         # --- Training ---
         train_triplet_loss, train_class_loss, train_acc, train_recall = train_epoch(
