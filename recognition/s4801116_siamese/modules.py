@@ -64,7 +64,7 @@ class LesionClassifier(nn.Module):
             nn.Linear(embedding_dim, hidden_dim),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
-            nn.Linear(hidden_dim, 1)
+            nn.Linear(hidden_dim, 2)
         )
 
     def forward(self, embedding):
@@ -72,10 +72,11 @@ class LesionClassifier(nn.Module):
         Predicts binary class from input embedding.
 
         Args:
-            - embedding (Tensor): Input embedding tensor of shape (B, embedding_dim)
-
+            - embedding (torch.Tensor): Input embedding tensor of shape [batch_size, embedding_dim]
+        
         Returns:
-            - prediction (Tensor): Output predictions of shape (B, 1)
+            - prediction (torch.Tensor): Output logits of shape [batch_size, 2]
+
         """
         prediction = self.classifier(embedding)
         return prediction

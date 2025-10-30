@@ -61,10 +61,9 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
 
             # --- Losses ---
             triplet_loss_val = triplet_loss(a_emb, p_emb, n_emb)
-
-            # Classification branch (binary → use sigmoid)
-            logits = classifier(a_emb)
-            class_loss_val = class_loss(logits.squeeze(), labels.float())
+            logits = classifier(a_emb)       # shape: [batch_size, 2]
+            labels = labels.long()                 # ensure integer labels
+            class_loss_val = class_loss(logits, labels)
 
             total_loss = triplet_loss_val + class_loss_val
 
@@ -73,8 +72,8 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
         scaler.step(optimizer)
         scaler.update()
 
-        preds = torch.sigmoid(logits).detach().cpu().round()
-        all_preds.extend(preds.numpy())
+        preds = torch.argmax(logits, dim=1)  # gives 0 or 1
+        all_preds.extend(preds.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
         running_triplet_loss += triplet_loss_val.item()
@@ -123,13 +122,14 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
 
             # --- Losses ---
             triplet_loss_val = triplet_loss(a_emb, p_emb, n_emb)
-            logits = classifier(a_emb)
-            class_loss_val = class_loss(logits.squeeze(), labels.float())
+            logits = classifier(a_emb)       # shape: [batch_size, 2]
+            labels = labels.long()                 # ensure integer labels
+            class_loss_val = class_loss(logits, labels)
 
             total_loss = triplet_loss_val + class_loss_val
 
-            preds = torch.sigmoid(logits).detach().cpu().round()
-            all_preds.extend(preds.numpy())
+            preds = torch.argmax(logits, dim=1)  # gives 0 or 1
+            all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
             running_triplet_loss += triplet_loss_val.item()
