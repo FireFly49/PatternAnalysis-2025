@@ -1,11 +1,11 @@
 """
 modules.py
 
-(ADD DESCRIPTION)
+Initialises the neural network
+modules for the binary classifier
+and Siamese network
 
 Author: Lalit Suresh
-Date: 25th October 2025
-
 """
 
 import torch

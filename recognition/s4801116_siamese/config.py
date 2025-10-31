@@ -1,11 +1,10 @@
 """
 config.py
 
-(ADD DESCRIPTION
+Stores global parameters and constant values
+such as paths or hyperparameters
 
 Author: Lalit Suresh
-Date: 25th October 2025
-
 """
 import os
 
@@ -18,7 +17,7 @@ TRAIN_IMGS_FOLDER = "train-image"
 METADATA_CSV_PATH = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, "train-metadata.csv")
 RAW_IMG_DIR = os.path.join(DATA_ROOT, RAW_IMGS_FOLDER, TRAIN_IMGS_FOLDER)
 PARTIONED_IMGS_DIR = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
-CHECKPOINT_PATH = "checkpoints/best_model.pth"
+CHECKPOINT_PATH = "checkpoints/final_model.pth"
 METRICS_CSV = "metrics/epoch_metrics.csv"
 SAVE_DIR = "metrics"
 

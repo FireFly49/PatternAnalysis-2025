@@ -1,12 +1,10 @@
 """
 predict.py
 
-Generates predictoins using the Siamese 
+Generates predictions using the Siamese 
 Network using a trained model
 
 Author: Lalit Suresh
-Date: 25th October 2025
-
 """
 import os
 import numpy as np
@@ -84,7 +82,7 @@ def generate_tsne(model, device, loader, set_name):
     tsne = TSNE(n_components=2, random_state=42, perplexity=30)
     reduced = tsne.fit_transform(all_embeddings)
 
-    plt.figure(figsize=(5, 4))
+    plt.figure(figsize=(7, 7))
     sns.scatterplot(
         x=reduced[:, 0], y=reduced[:, 1],
         hue=all_labels,
@@ -104,7 +102,7 @@ def main():
     df = pd.read_csv(METRICS_CSV)
     epochs = df["epoch"] if "epoch" in df.columns else range(len(df))
 
-    plt.figure(figsize=(5, 3))
+    plt.figure(figsize=(7, 4))
     plt.plot(epochs, df["train_triplet_loss"], label="Train Triplet Loss")
     plt.plot(epochs, df["val_triplet_loss"], label="Val Triplet Loss")
     plt.xlabel("Epoch")
@@ -115,7 +113,7 @@ def main():
     plt.savefig(os.path.join(SAVE_DIR, "triplet_loss_curve.png"), dpi=200)
     plt.close()
 
-    plt.figure(figsize=(5, 3))
+    plt.figure(figsize=(7, 4))
     plt.plot(epochs, df["train_class_loss"], label="Train Class Loss")
     plt.plot(epochs, df["val_class_loss"], label="Val Class Loss")
     plt.xlabel("Epoch")
@@ -126,7 +124,7 @@ def main():
     plt.savefig(os.path.join(SAVE_DIR, "class_loss_curve.png"), dpi=200)
     plt.close()
 
-    plt.figure(figsize=(5, 3))
+    plt.figure(figsize=(7, 4))
     plt.plot(epochs, df["train_acc"], label="Train Accuracy")
     plt.plot(epochs, df["val_acc"], label="Val Accuracy")
     plt.xlabel("Epoch")

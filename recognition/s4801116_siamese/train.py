@@ -1,11 +1,11 @@
 """
 train.py
 
-(ADD DESCRIPTION)
+Facilitates epoch training loops
+including logging per epoch metrics and 
+per epoch validation
 
 Author: Lalit Suresh
-Date: 25th October 2025
-
 """
 
 import os

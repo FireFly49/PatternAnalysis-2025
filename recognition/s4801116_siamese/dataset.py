@@ -1,11 +1,11 @@
 """
 dataset.py
 
-(ADD DESCRIPTION
+Generates dataset partitions
+and dataloaders for the ISIC2020 
+dataset
 
 Author: Lalit Suresh
-Date: 25th October 2025
-
 """
 
 import os
