@@ -25,15 +25,6 @@ from collections import Counter
 from tqdm import tqdm
 from config import BATCH_SIZE, WORKERS, MEAN, STD, PARTIONED_IMGS_DIR, METADATA_CSV_PATH, RAW_IMG_DIR
 
-# Hyperparameters
-
-DATA_ROOT = "data"
-PROCESSED_IMGS_FOLDER = "processed"
-RAW_IMGS_FOLDER = "raw"
-TRAIN_IMGS_FOLDER = "train-image"
-
-PARTIONED_IMGS_DIR = os.path.join(DATA_ROOT, PROCESSED_IMGS_FOLDER)
-
 # Credit to https://github.com/TheNoZER0/PatternAnalysis-2024/tree/topic-recognition/recognition/Siamese-48008361
 # for base structure of dataset file
 
@@ -323,7 +314,7 @@ def get_data_loaders(partitioned_imgs_dir=PARTIONED_IMGS_DIR):
     return train_loader, val_loader
 
 def main():
-    # partition_data(metadata_csv_path, raw_img_dir, partitioned_imgs_dir) UNCOMMENT AT THE END
+    partition_data(METADATA_CSV_PATH, RAW_IMG_DIR, PARTIONED_IMGS_DIR)
 
     train_loader, val_loader = get_data_loaders()
 

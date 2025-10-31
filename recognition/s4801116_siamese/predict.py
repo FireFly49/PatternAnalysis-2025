@@ -16,18 +16,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
-from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
 
 from dataset import get_data_loaders 
 from modules import SiameseNetwork, LesionClassifier  
-from config import EMBEDDING_DIM  
 
-
-CHECKPOINT_PATH = "checkpoints/last_checkpoint(1).pth"
-METRICS_CSV = "metrics/epoch_metrics.csv"
-SAVE_DIR = "metrics"
-
+from config import CHECKPOINT_PATH, METRICS_CSV, SAVE_DIR, EMBEDDING_DIM
 
 
 def compute_confusion_matrix(model, device, classifier, loader, set_name):
