@@ -8,175 +8,164 @@ Author: Lalit Suresh
 Date: 25th October 2025
 
 """
-import torch
-import torch.nn.functional as F
-from modules import SiameseNetwork
-from dataset import get_data_loaders
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import os
 import numpy as np
+import torch
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.manifold import TSNE
+from sklearn.metrics import confusion_matrix
+from torch.utils.data import DataLoader
+import torch.multiprocessing as mp
 
-# --- Helper for inference ---
-def load_model_for_inference(model_path, device=None):
+from dataset import get_data_loaders 
+from modules import SiameseNetwork, LesionClassifier  
+from config import EMBEDDING_DIM  
+
+
+CHECKPOINT_PATH = "checkpoints/last_checkpoint(1).pth"
+METRICS_CSV = "metrics/epoch_metrics.csv"
+SAVE_DIR = "metrics"
+
+
+
+def compute_confusion_matrix(model, device, classifier, loader, set_name):
     """
-    Loads a saved SiameseNetwork for inference.
-    Use with either the full model .pt or the state_dict .pth.
-    """
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Loading model on device: {device}")
-
-    if model_path.endswith(".pt"):
-        # Full model (architecture + weights)
-        model = torch.load(model_path, map_location=device, weights_only=False)
-        model.eval()
-        print(f"✅ Loaded full model from '{model_path}'")
-    else:
-        # state_dict only, need to recreate model first
-        model = SiameseNetwork(embedding_dim=256).to(device)
-        checkpoint = torch.load(model_path, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        model.eval()
-        print(f"✅ Loaded model weights from '{model_path}' (epoch {checkpoint['epoch']})")
-
-    return model
-
-def evaluate_siamese_accuracy(model, data_loader, margin, device):
-    """
-    Evaluates the model's accuracy based on the Triplet Loss criterion:
-    Distance(Anchor, Positive) < Distance(Anchor, Negative).
-    
-    The accuracy is the percentage of triplets that satisfy the condition 
-    E_AP < E_AN (where E_AP is the distance between Anchor and Positive embeddings
-    and E_AN is the distance between Anchor and Negative embeddings).
-    
-    Args:
-        model (nn.Module): The trained Siamese network.
-        data_loader (DataLoader): The validation or test DataLoader.
-        margin (float): The margin used in the Triplet Loss.
-        device (torch.device): The device to run evaluation on.
-
-    Returns:
-        float: The calculated Triplet Accuracy (0.0 to 1.0).
-    """
-    model.eval() # Set model to evaluation mode
-    correct_triplets = 0
-    total_triplets = 0
-    
-    with torch.no_grad():
-        for anchor, positive, negative, _ in data_loader:
-            anchor = anchor.to(device)
-            positive = positive.to(device)
-            negative = negative.to(device)
-            
-            # Get embeddings
-            output_A, output_P, output_N = model(anchor, positive, negative)
-            
-            # Calculate L2 (Euclidean) distance for Anchor-Positive and Anchor-Negative
-            # E_AP: Distance between Anchor and Positive embeddings
-            E_AP = F.pairwise_distance(output_A, output_P, p=2)
-            # E_AN: Distance between Anchor and Negative embeddings
-            E_AN = F.pairwise_distance(output_A, output_N, p=2)
-
-            # A triplet is 'correct' if the Anchor is closer to the Positive than the Negative.
-            correct_triplets += torch.sum(E_AP < E_AN).item()
-            total_triplets += anchor.size(0)
-
-    model.train() # Set model back to training mode
-    return correct_triplets / total_triplets if total_triplets > 0 else 0.0
-
-def get_verification_predictions(model, data_loader, distance_threshold, device):
-    """
-    Generates ground truth and predicted labels for a binary verification task
-    based on the Siamese network's distances. This output is suitable for 
-    calculating a Confusion Matrix using external libraries (e.g., scikit-learn).
-
-    The task is: Given a pair, predict if they are the Same Class (1) or Different Class (0).
-    A prediction is 'Same' (1) if Distance < threshold.
+    Generates a confusion matrix using a given model
+    on the validation and training sets.
 
     Args:
-        model (nn.Module): The trained Siamese network.
-        data_loader (DataLoader): The validation or test DataLoader yielding (A, P, N).
-        distance_threshold (float): The boundary distance (tau) for classification.
-        device (torch.device): The device to run evaluation on.
-
-    Returns:
-        tuple: (y_true, y_pred), both are lists of 0s and 1s suitable for 
-               calculating a confusion matrix or other metrics (e.g., AUC).
+        device (torch.device): Device to run the computations on ('cuda' or 'cpu').
+        model (nn.Module): Siamese network used to generate image embeddings.
+        classifier (nn.Module): Classifier network that maps embeddings to class logits.
+        loader (DataLoader): Data loader for confusion matrix.
+        set_name (str): Name of confusion matrix.
     """
-    model.eval()
-    y_true = []
-    y_pred = []
-
+    all_preds, all_labels = [], []
     with torch.no_grad():
-        for anchor, positive, negative, _ in data_loader:
-            anchor = anchor.to(device)
-            positive = positive.to(device)
-            negative = negative.to(device)
-            
-            # Get embeddings
-            output_A, output_P, output_N = model(anchor, positive, negative)
-            
-            # 1. Anchor-Positive Pair (Ground Truth = Same Class/1)
-            dist_AP = F.pairwise_distance(output_A, output_P, p=2)
-            
-            # Prediction: 1 (Same) if distance < threshold, 0 (Different) otherwise
-            # Convert boolean comparison to int (0 or 1), then to CPU list
-            pred_AP = (dist_AP < distance_threshold).int().cpu().tolist()
-            
-            y_pred.extend(pred_AP)
-            y_true.extend([1] * len(pred_AP)) # True label is 1 (Same Class)
+        for anchors, positives, negatives, labels in loader:
+            anchors, labels = anchors.to(device), labels.to(device)
+            embeddings = model.get_embeddings(anchors)
+            logits = classifier(embeddings)
+            preds = torch.argmax(logits, dim=1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
 
-            # 2. Anchor-Negative Pair (Ground Truth = Different Classes/0)
-            dist_AN = F.pairwise_distance(output_A, output_N, p=2)
-            
-            # Prediction: 1 (Same) if distance < threshold, 0 (Different) otherwise
-            pred_AN = (dist_AN < distance_threshold).int().cpu().tolist()
-            
-            y_pred.extend(pred_AN)
-            y_true.extend([0] * len(pred_AN)) # True label is 0 (Different Classes)
-
-    model.train()
-    return y_true, y_pred
+    cm = confusion_matrix(all_labels, all_preds)
+    plt.figure(figsize=(5, 4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"Confusion Matrix - {set_name}")
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.savefig(os.path.join(SAVE_DIR, f"confusion_matrix_{set_name}.png"), dpi=200)
+    plt.close()
+    print(f"✅ Saved confusion matrix for {set_name} set.")
+    return cm
 
 
-def predict():
-    pass
+def generate_tsne(model, device, loader, set_name):
+    """
+    Generates a t-sne plot using a given model
+    on the validation and training sets.
 
+    Args:
+        model (nn.Module): Siamese network used to generate image embeddings.
+        device (torch.device): Device to run the computations on ('cuda' or 'cpu').
+        loader (DataLoader): Data loader for confusion matrix.
+        set_name (str): Name of confusion matrix.
+
+    """
+    all_embeddings, all_labels = [], []
+    with torch.no_grad():
+        for anchors, positives, negatives, labels in loader:
+            anchors, labels = anchors.to(device), labels.to(device)
+            embeddings = model.get_embeddings(anchors)
+            all_embeddings.append(embeddings.cpu())
+            all_labels.append(labels.cpu())
+
+    all_embeddings = torch.cat(all_embeddings).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    reduced = tsne.fit_transform(all_embeddings)
+
+    plt.figure(figsize=(5, 4))
+    sns.scatterplot(
+        x=reduced[:, 0], y=reduced[:, 1],
+        hue=all_labels,
+        palette="coolwarm", s=15, alpha=0.8
+    )
+    plt.title(f"t-SNE Visualization ({set_name} embeddings)")
+    plt.legend(title="Label")
+    plt.savefig(os.path.join(SAVE_DIR, f"tsne_{set_name}.png"), dpi=200)
+    plt.close()
+    print(f"✅ Saved t-SNE scatter plot for {set_name} set.")
 
 def main():
-    predict()
 
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    df = pd.read_csv(METRICS_CSV)
+    epochs = df["epoch"] if "epoch" in df.columns else range(len(df))
+
+    plt.figure(figsize=(5, 3))
+    plt.plot(epochs, df["train_triplet_loss"], label="Train Triplet Loss")
+    plt.plot(epochs, df["val_triplet_loss"], label="Val Triplet Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Triplet Loss")
+    plt.title("Triplet Loss over Epochs")
+    plt.xticks(np.arange(0, 21, step=2))
+    plt.legend()
+    plt.savefig(os.path.join(SAVE_DIR, "triplet_loss_curve.png"), dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(5, 3))
+    plt.plot(epochs, df["train_class_loss"], label="Train Class Loss")
+    plt.plot(epochs, df["val_class_loss"], label="Val Class Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Classification Loss")
+    plt.title("Classification Loss over Epochs")
+    plt.xticks(np.arange(0, 21, step=2))
+    plt.legend()
+    plt.savefig(os.path.join(SAVE_DIR, "class_loss_curve.png"), dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(5, 3))
+    plt.plot(epochs, df["train_acc"], label="Train Accuracy")
+    plt.plot(epochs, df["val_acc"], label="Val Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Accuracy over Epochs")
+    plt.xticks(np.arange(0, 21, step=2))
+    plt.legend()
+    plt.savefig(os.path.join(SAVE_DIR, "accuracy_curve.png"), dpi=200)
+    plt.close()
+
+    print("✅ Saved loss and accuracy plots.")
+
+    model = SiameseNetwork(embedding_dim=EMBEDDING_DIM).to(device)
+    classifier = LesionClassifier(embedding_dim=EMBEDDING_DIM).to(device)
+
+    checkpoint = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=False)
+    model.load_state_dict(checkpoint["model_state"])
+    classifier.load_state_dict(checkpoint["classifier_state"])
+    model.eval()
+    classifier.eval()
+
+    print("✅ Loaded trained model and classifier.")
+
+    train_loader, val_loader = get_data_loaders()
+    compute_confusion_matrix(model, device, classifier, train_loader, "train")
+    compute_confusion_matrix(model, device, classifier, val_loader, "val")
+
+    
+    generate_tsne(model, device, train_loader, "train")
+    generate_tsne(model, device, val_loader, "val")
+
+    print("Plots saved in:", SAVE_DIR)
 
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    _, val_loader = get_data_loaders()
-    model = load_model_for_inference("checkpoints/final_triplet_model_full.pt")
-    acc = evaluate_siamese_accuracy(model,data_loader=val_loader, margin=0.5, device=device)
-    print(f"Triplet Accuracy on Validation Set: {acc*100:.2f}%")
-
-    # --- 1. Define the Threshold ---
-    # You need to experiment with this value. A good starting point might be 
-    # your Triplet Margin, or the point that maximizes F1-score.
-    DISTANCE_THRESHOLD = 0.8  # Example threshold (L2 distance)
-
-    # --- 2. Generate True and Predicted Labels ---
-    y_true, y_pred = get_verification_predictions(
-        model=model, 
-        data_loader=val_loader, 
-        distance_threshold=DISTANCE_THRESHOLD, 
-        device=device
-    )
-
-    # Convert lists to NumPy arrays for scikit-learn
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-
-    # --- 3. Calculate and Plot the Confusion Matrix ---
-    cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Different (0)', 'Same (1)'])
-
-    # Plotting
-    fig, ax = plt.subplots(figsize=(6, 6))
-    disp.plot(cmap=plt.cm.Blues, ax=ax)
-    ax.set_title(f'Verification Confusion Matrix (Threshold={DISTANCE_THRESHOLD})')
-    plt.show()
+    mp.freeze_support()
+    main()

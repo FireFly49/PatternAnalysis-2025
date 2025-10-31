@@ -22,20 +22,33 @@ from tqdm import tqdm
 from modules import SiameseNetwork, LesionClassifier
 from dataset import get_data_loaders
 
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix, balanced_accuracy_score
+from sklearn.metrics import confusion_matrix, balanced_accuracy_score
 
-from config import EMBEDDING_DIM, LEARNING_RATE, EPOCHS, BATCH_SIZE, PARTIONED_IMGS_DIR
+from config import EMBEDDING_DIM, LEARNING_RATE, EPOCHS
 
 import time
 
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 def train_epoch(train_loader, device, model, classifier, optimizer, scaler, triplet_loss, class_loss):
     """
-    Train siamese network and classifier for a single epoch
+    Performs training on the siamese network and classifier for one epoch.
+
+    Args: 
+        train_loader (DataLoader): DataLoader providing batches of triplets (anchor, positive, negative) along with class labels.
+        device (torch.device): Device to run the computations on ('cuda' or 'cpu').
+        model (nn.Module): Siamese network used to generate image embeddings.
+        classifier (nn.Module): Classifier network that maps embeddings to class logits.
+        optimizer (torch.optim.Optimizer): Optimizer for updating model parameters.
+        scaler (torch.cuda.amp.GradScaler): Mixed precision gradient scaler for stable training.
+        triplet_loss (nn.Module): Loss function for embedding distance learning.
+        class_loss (nn.Module): Loss function for classification (e.g., CrossEntropyLoss).
+    
+    Returns:
+        avg_triplet_loss (float): Mean triplet loss over all training batches.
+        avg_class_loss (float): Mean classification loss over all training batches.
+        final_acc (float): Average classification accuracy across the epoch.
     """
 
     model.train()
@@ -47,7 +60,7 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
 
     pbar_train = tqdm(train_loader, desc="Training")
     for batch_idx, (anchor, positive, negative, labels) in enumerate(pbar_train):
-        # Transfer to device (GPU/CPU)
+
         anchor, positive, negative, labels = (
                 anchor.to(device),
                 positive.to(device),
@@ -62,8 +75,8 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
 
             # --- Losses ---
             triplet_loss_val = triplet_loss(a_emb, p_emb, n_emb)
-            logits = classifier(a_emb)       # shape: [batch_size, 2]
-            labels = labels.long()                 # ensure integer labels
+            logits = classifier(a_emb)    # shape: [batch_size, 2]
+            labels = labels.long()        # ensure integer labels
             class_loss_val = class_loss(logits, labels)
 
             total_loss = triplet_loss_val + class_loss_val
@@ -92,8 +105,6 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
     # Calculate final metrics for the epoch
     avg_triplet_loss = running_triplet_loss / len(train_loader)
     avg_class_loss = running_class_loss / len(train_loader)
-    # final_acc = accuracy_score(all_labels, all_preds)
-    # final_recall = recall_score(all_labels, all_preds)
     final_acc = balanced_accuracy_score(all_labels, all_preds)
 
     return avg_triplet_loss, avg_class_loss, final_acc
@@ -102,7 +113,20 @@ def train_epoch(train_loader, device, model, classifier, optimizer, scaler, trip
 
 def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_loss):
     """
-    Validate siamese network and classifier for a single epoch
+    Validate siamese network and classifier for a single epoch.
+
+    Args
+        val_loader: (DataLoader): DataLoader for training set.
+        device (torch.device): Device to run the computations on ('cuda' or 'cpu').
+        model (nn.Module): Siamese network used to generate image embeddings.
+        classifier (nn.Module): Classifier network that maps embeddings to class logits.
+        triplet_loss (nn.Module): Loss function for embedding distance learning.
+        class_loss (nn.Module): Loss function for classification (e.g., CrossEntropyLoss).
+
+    Returns:
+        avg_triplet_loss (float): Mean triplet loss over all training batches.
+        avg_class_loss (float): Mean classification loss over all training batches.
+        final_acc (float): Average classification accuracy across the epoch.
     """
     model.eval()
     classifier.eval()
@@ -113,7 +137,7 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
     with torch.no_grad():
         pbar_val = tqdm(val_loader, desc="Validation")
         for batch_idx, (anchor, positive, negative, labels) in enumerate(pbar_val):
-            # Transfer to device (GPU/CPU)
+
             anchor, positive, negative, labels = (
                     anchor.to(device),
                     positive.to(device),
@@ -122,10 +146,9 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
             )
             a_emb, p_emb, n_emb = model(anchor, positive, negative)
 
-            # --- Losses ---
             triplet_loss_val = triplet_loss(a_emb, p_emb, n_emb)
             logits = classifier(a_emb)       # shape: [batch_size, 2]
-            labels = labels.long()                 # ensure integer labels
+            labels = labels.long()           # ensure integer labels
             class_loss_val = class_loss(logits, labels)
 
             total_loss = triplet_loss_val + class_loss_val
@@ -148,9 +171,7 @@ def validate_epoch(val_loader, device, model, classifier, triplet_loss, class_lo
     # Calculate final metrics for the epoch
     avg_triplet_loss = running_triplet_loss / len(val_loader)
     avg_class_loss = running_class_loss / len(val_loader)
-    # final_acc = accuracy_score(all_labels, all_preds)
 
-    # final_recall = recall_score(all_labels, all_preds)
     final_acc = balanced_accuracy_score(all_labels, all_preds)
 
     return avg_triplet_loss, avg_class_loss, final_acc
@@ -163,7 +184,6 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # === Paths ===
     checkpoint_dir = "checkpoints"
     metrics_dir = "metrics"
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -172,15 +192,12 @@ def main():
     epoch_metrics_export_file = os.path.join(metrics_dir, "epoch_metrics.csv")
     print("✅ Created / Checked necessary directories")
 
-    # === Data loaders ===
     train_loader, val_loader = get_data_loaders()
     print("✅ Data loaders ready")
 
-    # === Models, Losses, Optimizer, Scheduler ===
     model = SiameseNetwork(embedding_dim=EMBEDDING_DIM).to(device)
     classifier = LesionClassifier(embedding_dim=EMBEDDING_DIM).to(device)
 
-    # Access class distribution
     train_labels = train_loader.dataset.all_labels
     class_counts = Counter(train_labels)
     benign_count = class_counts[0]
@@ -200,17 +217,13 @@ def main():
     scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=5)
     scaler = GradScaler()
 
-    # === Metrics storage ===
     train_triplet_losses, val_triplet_losses = [], []
     train_class_losses, val_class_losses = [], []
     train_accs, val_accs = [], []
-    # train_recalls, val_recalls = [], []   
 
-    # === Checkpoint tracking ===
-    best_val_acc = 0.0     # <--- Save best model by recall (or acc, your choice)
+    best_val_acc = 0.0
     start_epoch = 0
 
-    # === Resume checkpoint (optional) ===
     resume_path = os.path.join(checkpoint_dir, "last_checkpoint.pt")
     if os.path.exists(resume_path):
         ckpt = torch.load(resume_path, map_location=device)
@@ -222,13 +235,12 @@ def main():
         best_val_acc = ckpt.get("best_val_acc", 0.0)
         print(f"✅ Resumed from checkpoint at epoch {start_epoch} (best acc: {best_val_acc:.4f})")
 
-    # === Training loop ===
     start = time.time()
 
     for epoch in range(start_epoch, EPOCHS):
         print(f"\nEpoch {epoch+1}/{EPOCHS}")
 
-        # --- Backbone freeze/unfreeze logic ---
+        # Backbone freeze/unfreeze logic
         if epoch < 3:
             # Freeze the backbone for first 3 epochs
             for param in model.backbone.parameters():
@@ -242,25 +254,20 @@ def main():
             if epoch == 3:
                 print("Backbone unfrozen for fine-tuning")
 
-        # --- Training ---
         train_triplet_loss, train_class_loss, train_acc = train_epoch(
             train_loader, device, model, classifier, optimizer, scaler, triplet_loss, classifier_loss
         )
 
-        # --- Validation ---
         val_triplet_loss, val_class_loss, val_acc = validate_epoch(
             val_loader, device, model, classifier, triplet_loss, classifier_loss
         )
 
-        # --- Record metrics ---
         train_triplet_losses.append(train_triplet_loss)
         val_triplet_losses.append(val_triplet_loss)
         train_class_losses.append(train_class_loss)
         val_class_losses.append(val_class_loss)
         train_accs.append(train_acc)
         val_accs.append(val_acc)
-        # train_recalls.append(train_recall)
-        # val_recalls.append(val_recall)
 
         print(
             f"Train Triplet Loss: {train_triplet_loss:.4f}, "
@@ -271,10 +278,8 @@ def main():
             f"Val Acc: {val_acc:.4f}, "
         )
 
-        # --- Scheduler step (based on recall) ---
         scheduler.step(val_acc)
 
-        # --- Checkpointing ---
         checkpoint = {
             "epoch": epoch + 1,
             "model_state": model.state_dict(),
@@ -284,20 +289,16 @@ def main():
             "best_val_acc": best_val_acc,
         }
 
-        # Always save "last"
         torch.save(checkpoint, os.path.join(checkpoint_dir, "last_checkpoint.pth"))
 
-        # Save "best" checkpoint if recall improves
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(checkpoint, best_model_path)
             print(f"🏆 New best model saved at epoch {epoch+1} (val acc: {best_val_acc:.4f})")
 
-        # Optional: periodic checkpoint
         if (epoch + 1) % 5 == 0:
             torch.save(checkpoint, os.path.join(checkpoint_dir, f"epoch_{epoch+1}.pth"))
 
-    # === Save metrics to CSV ===
     df = pd.DataFrame({
         'epoch': range(1, len(train_accs) + 1),
         'train_triplet_loss': train_triplet_losses,
@@ -306,8 +307,6 @@ def main():
         'val_class_loss': val_class_losses,
         'train_acc': train_accs,
         'val_acc': val_accs,
-        # 'train_recall': train_recalls,
-        # 'val_recall': val_recalls
     })
     df.to_csv(epoch_metrics_export_file, index=False)
 
